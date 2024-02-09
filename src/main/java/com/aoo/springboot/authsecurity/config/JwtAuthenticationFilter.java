@@ -4,10 +4,12 @@ import com.aoo.springboot.authsecurity.services.JwtService;
 import com.aoo.springboot.authsecurity.services.UserService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseCookie;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -30,41 +32,49 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                     HttpServletResponse response,
                                     FilterChain filterChain)
             throws ServletException, IOException {
-        final String authHeader = request.getHeader("Authorization");
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+        final String jwtToken = parseJwt(request);
+        if (jwtToken == "") {
             filterChain.doFilter(request, response);
             return;
-        }
-        try {
-            final String jwt = authHeader.substring(7);
-            final String userEmail = jwtService.extractUsername(jwt);
-            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-            if (jwtService.isTokenInvalidated(jwt)) {
-                response.setStatus(HttpStatus.FORBIDDEN.value()); // Token is already invalidated
-                response.getWriter().write("Login please!");
-                response.getWriter().flush();
-                response.getWriter().close();
-                return;
-            }
-            if(userEmail != null && authentication == null){
-                UserDetails userDetails = userService.userDetailsService()
-                        .loadUserByUsername(userEmail);
-
-                if(jwtService.isTokenValid(jwt, userDetails)){
-                    UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
-                            userDetails,
-                            null,
-                            userDetails.getAuthorities()
-                    );
-
-                    authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                    SecurityContextHolder.getContext().setAuthentication(authToken);
+        }else {
+            try {
+                if (jwtService.isTokenInvalidated(jwtToken)) {
+                    ResponseCookie cookie = jwtService.getCleanJwtCookie();
+                    Cookie servletCookie = new Cookie(cookie.getName(), cookie.getValue());
+                    servletCookie.setPath(cookie.getPath());
+                    response.addCookie(servletCookie);
+                    response.setStatus(HttpStatus.FORBIDDEN.value()); // Token is already invalidated
+                    response.getWriter().write("Login please!");
+                    response.getWriter().flush();
+                    response.getWriter().close();
+                    return;
                 }
-            }
-            filterChain.doFilter(request, response);
-        }catch (Exception exception){
+                final String userEmail = jwtService.extractUsername(jwtToken);
+                Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+                if (userEmail != null && authentication == null) {
+                    UserDetails userDetails = userService.userDetailsService()
+                            .loadUserByUsername(userEmail);
 
-            handlerExceptionResolver.resolveException(request, response, null, exception);
+                    if (jwtService.isTokenValid(jwtToken, userDetails)) {
+                        UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
+                                userDetails,
+                                null,
+                                userDetails.getAuthorities()
+                        );
+
+                        authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                        SecurityContextHolder.getContext().setAuthentication(authToken);
+                    }
+                }
+                filterChain.doFilter(request, response);
+            } catch (Exception exception) {
+
+                handlerExceptionResolver.resolveException(request, response, null, exception);
+            }
         }
     }
+    private String parseJwt(HttpServletRequest request){
+        return jwtService.getJwtFromCookies(request);
+    }
+
 }

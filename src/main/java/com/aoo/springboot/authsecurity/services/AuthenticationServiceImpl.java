@@ -2,6 +2,7 @@ package com.aoo.springboot.authsecurity.services;
 
 import com.aoo.springboot.authsecurity.dto.AuthRequest;
 import com.aoo.springboot.authsecurity.dto.JwtResponseDto;
+import com.aoo.springboot.authsecurity.dto.MessageResponse;
 import com.aoo.springboot.authsecurity.dto.RegisterUserDto;
 import com.aoo.springboot.authsecurity.models.*;
 import com.aoo.springboot.authsecurity.repositories.TokenRepository;
@@ -23,8 +24,9 @@ public class AuthenticationServiceImpl implements AuthenticationService{
     private final JwtService jwtService;
     private final AuthenticationManager authenticationManager;
     private final TokenRepository tokenRepository;
+    private final UserService userService;
     @Override
-    public JwtResponseDto signup(RegisterUserDto registerUserDto) {
+    public MessageResponse signup(RegisterUserDto registerUserDto) {
 
 
         var user = User.builder()
@@ -34,13 +36,8 @@ public class AuthenticationServiceImpl implements AuthenticationService{
                 .role(EnumRole.USER)
                 .build();
         userRepository.save(user);
-        var jwtToken = jwtService.generateToken(user.getEmail());
-        var refreshToken = jwtService.generateRefreshToken(user.getEmail());
-        saveUserToken(user, jwtToken);
-        return JwtResponseDto.builder()
-                .accessToken(jwtToken)
-                .refreshToken(refreshToken)
-                .expiresIn(jwtService.getExpirationTime())
+        return MessageResponse.builder()
+                .message("User Registered Successfully!")
                 .build();
     }
 
@@ -53,14 +50,12 @@ public class AuthenticationServiceImpl implements AuthenticationService{
 
         var user = userRepository.findByEmail(authRequest.getEmail())
                 .orElseThrow();
-        var jwtToken = jwtService.generateToken((user.getEmail()));
-        var refreshToken = jwtService.generateRefreshToken(user.getEmail());
+        var jwtTokenCookie = jwtService.generateJwtCookie((user.getEmail()));
         revokeAllUserTokens(user);
-        saveUserToken(user, jwtToken);
+        saveUserToken(user, jwtTokenCookie.getValue());
         return JwtResponseDto.builder()
-                .accessToken(jwtToken)
-                .refreshToken(refreshToken)
-                .expiresIn(jwtService.getExpirationTime())
+                .responseCookie(jwtTokenCookie)
+                .userResponse(userService.mapToUserResponse(user))
                 .build();
     }
 

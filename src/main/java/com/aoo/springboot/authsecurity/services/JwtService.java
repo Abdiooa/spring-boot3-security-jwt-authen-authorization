@@ -1,6 +1,7 @@
 package com.aoo.springboot.authsecurity.services;
 
 
+import com.aoo.springboot.authsecurity.models.Token;
 import com.aoo.springboot.authsecurity.repositories.TokenRepository;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
@@ -20,6 +21,7 @@ import java.security.Key;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Function;
 
 @Service
@@ -42,6 +44,28 @@ public class JwtService {
     public <T> T extractClaim(String token, Function<Claims,T> claimsResolver){
         final Claims claims = extractAllClaims(token);
         return claimsResolver.apply(claims);
+    }
+    public ResponseCookie generateJwtCookie(String username){
+        String jwtToken = generateToken(username);
+        return ResponseCookie.from(jwtCookie, jwtToken)
+                .path("/api")
+                .maxAge(24 * 60 * 60)
+                .httpOnly(true)
+                .build();
+    }
+
+    public ResponseCookie getCleanJwtCookie(){
+        return ResponseCookie.from(jwtCookie, null)
+                .path("/api")
+                .build();
+    }
+    public String getJwtFromCookies(HttpServletRequest request){
+        Cookie cookie = WebUtils.getCookie(request, jwtCookie);
+        if (cookie != null) {
+            return cookie.getValue();
+        } else {
+            return null;
+        }
     }
     public long getExpirationTime(){
         return jwtExpiration;
@@ -97,8 +121,10 @@ public class JwtService {
         tokenRepository.save(storedToken);
     }
     public boolean isTokenInvalidated(String token) {
-        var storedToken = tokenRepository.findByToken(token)
-                .orElse(null);
-        return storedToken.isExpired() && storedToken.isRevoked();
+        Optional<Token> storedToken = tokenRepository.findByToken(token);
+        if(storedToken.isEmpty()){
+            return true;
+        }
+        return storedToken.get().isExpired() && storedToken.get().isRevoked();
     }
 }
